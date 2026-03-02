@@ -9,28 +9,36 @@ class Dense_Layer:
         matrix_f = np.dot(inputs,self.pesos)+self.bias
         print(matrix_f.shape)
         return matrix_f
+    def cargar_dimensiones(self, pesos, bias):
+        if pesos.shape != self.pesos.shape or bias.shape != self.bias.shape:
+            raise ValueError("Las dimensiones de los pesos no coincide ")
+        self.pesos = pesos
+        self.bias = bias
 
-def Relu (x):
-    return np.maximum(0,x)
+class Activation_ReLU:
+    def forward(self, inputs):
+        self.output = np.maximum(0, inputs)
+        return self.output
 
-def Softmax(x):
-    safe_batch = x - np.max(x)
-    exp_x = np.exp(safe_batch)
-    return exp_x / np.sum(exp_x)
+class Activation_Softmax:
+    def forward(self, inputs):
+        safe_batch = inputs - np.max(inputs, axis=1, keepdims=True)
+        exp_values = np.exp(safe_batch)
+        probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)
+        self.output = probabilities
+        return self.output
 
 
-    
+entradas = np.random.rand(6, 4)
+print("Entradas:", entradas.shape)
 
-entradas = np.random.rand(6,4)
-print("ENtradas" , entradas)
-Test_Layer= Dense_Layer(4,3)
+Test_Layer = Dense_Layer(4, 3)
 salidas = Test_Layer.forward(entradas)
-print("RELU ----> ", Relu(salidas))
-print("Softmax ----> ", Softmax(salidas))
 
+capa_relu = Activation_ReLU()
+capa_softmax = Activation_Softmax()
 
-
-
-
+print("RELU ----> ", capa_relu.forward(salidas))
+print("Softmax ----> ", capa_softmax.forward(salidas))
 
 
