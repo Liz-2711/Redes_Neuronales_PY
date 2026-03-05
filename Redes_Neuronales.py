@@ -4,6 +4,8 @@ class Dense_Layer:
     def __init__(self, n_input,n_neu):
         self.pesos = np.random.rand(n_input,n_neu)
         self.bias = np.zeros(n_neu)
+        self.n_input = n_input
+        self.n_neurons = n_neu
         print(self.pesos, self.bias)
     def forward(self, inputs):
         matrix_f = np.dot(inputs,self.pesos)+self.bias
