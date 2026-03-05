@@ -4,7 +4,7 @@ import numpy as np
 #Agregar ----> NOrmalizar las vainas 
 def predict_single_image(image, model_layers):
     
-    input= image[3]
+    input= image
 
     reshaped_image=input.shape(-1)
     imagen_norm = reshaped_image/255
@@ -14,3 +14,5 @@ def predict_single_image(image, model_layers):
     
    
     return current_output
+
+
