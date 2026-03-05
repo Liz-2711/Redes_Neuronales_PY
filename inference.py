@@ -1,58 +1,46 @@
 # inference.py
 import numpy as np
-from Redes_Neuronales import DenseLayer, Activation_ReLU, Activation_Softmax
-
-
-
-def predict_single_image(image, model_layers):
-    
-    input= image
-
-    reshaped_image=input.shape(-1)
-    imagen_norm = reshaped_image/255
-
-    for layer in model_layers:
-        current_output = layer.forward(imagen_norm)
-    
-   
-    return current_output
+from Redes_Neuronales import Dense_Layer, Activation_ReLU, Activation_Softmax
 
 
 class Forward_Red:
-    def __int__(self, layers):
-        self.layer=[]
-        self.Capa_Red(layers)
-    def Capa_Red(self, layers):
-        for i, lay in enumerate(layers):
-            W = lay["W"]
-            b = lay["b"]
+    def __init__(self, layers_config):
+      
+        self.layers = []
+        self._build_network(layers_config)
 
-            n_input, n_neurons = W.shape
-            
-            # Crear capa densa
-            dense = DenseLayer(n_input, n_neurons)
-            dense.set_weights(W, b)
+    def _build_network(self, layers_config):
+        for i, layer_cfg in enumerate(layers_config):
+            # Pesos y bias desde el JSON
+            weights = np.array(layer_cfg["W"])
+            biases = np.array(layer_cfg["b"])
+
+            n_input, n_neurons = weights.shape
+
+            # Crear capa densa con las dimensiones correctas
+            dense = Dense_Layer(n_input, n_neurons)
+            dense.cargar_dimensiones(weights, biases)
             self.layers.append(dense)
-            
-            # Agregar activación - Softmax para salida
-            if i < len(layers) - 1:
+
+            # Capas de activación: ReLU en las ocultas, Softmax en la final
+            if i < len(layers_config) - 1:
                 self.layers.append(Activation_ReLU())
             else:
                 self.layers.append(Activation_Softmax())
 
+    def predict(self, image):
+        # Busacar porque con flattened = image.reshape(-1) / 255.0 me da error ??
+       
+        flattened = image.reshape(1, -1).astype(np.float32) / 255.0
 
-
-def predicciones(self,imagen):
-    # Preprocesar imagen
-        output = predict_single_image(imagen)
-        
-        # Pasar por todas las capas
+        current_output = flattened
         for layer in self.layers:
-            output = layer.forward(output)
-        
-        return output
+            current_output = layer.forward(current_output)
 
-def predict_class(self, imagen):
-        
-        probabilities = self.predict(imagen)
-        return np.argmax(probabilities)
+        return current_output
+
+    def predict_class(self, image):
+       
+        probabilities = self.predict(image)
+        # np.argmax sobre eje de columnas, tomamos el primer (y único) elemento del batch
+        return int(np.argmax(probabilities, axis=1)[0])
