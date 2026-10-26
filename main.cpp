@@ -5,6 +5,7 @@
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <onnxruntime_cxx_api.h>
 
 std::vector<uint8_t> leer_imagenes_bin(const std::string& ruta) {
@@ -39,7 +40,13 @@ int main() {
         session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
 
         std::string model_path = "mnist.onnx";
+#ifdef _WIN32
+        // En Windows, ONNX Runtime recibe la ruta como wchar_t*
+        std::wstring model_path_w(model_path.begin(), model_path.end());
+        Ort::Session session(env, model_path_w.c_str(), session_options);
+#else
         Ort::Session session(env, model_path.c_str(), session_options);
+#endif
 
         Ort::AllocatorWithDefaultOptions allocator;
         auto inputTypeInfo = session.GetInputTypeInfo(0);
@@ -85,41 +92,60 @@ int main() {
         int aciertos = 0;
         float total_loss = 0.0f;
 
-        for (int i = 0; i < imagenes_a_probar; i++) {
-            size_t offset = i * TAMANO_IMAGEN;
-            for (int j = 0; j < TAMANO_IMAGEN; j++) {
-                input_tensor_values[j] = static_cast<float>(imagenes_data[offset + j]) / 255.0f;
+        // Una pasada completa sobre el test set, imagen por imagen
+        auto evaluar_test_set = [&]() {
+            aciertos = 0;
+            total_loss = 0.0f;
+            for (int i = 0; i < imagenes_a_probar; i++) {
+                size_t offset = i * TAMANO_IMAGEN;
+                for (int j = 0; j < TAMANO_IMAGEN; j++) {
+                    input_tensor_values[j] = static_cast<float>(imagenes_data[offset + j]) / 255.0f;
+                }
+
+                std::vector<int64_t> tensor_shape = {1, ALTO, ANCHO};
+                Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
+                    memory_info,
+                    input_tensor_values.data(),
+                    TAMANO_IMAGEN,
+                    tensor_shape.data(),
+                    tensor_shape.size()
+                );
+
+                std::vector<Ort::Value> output_tensors = session.Run(
+                    Ort::RunOptions{nullptr},
+                    input_names,
+                    &input_tensor,
+                    1,
+                    output_names,
+                    1
+                );
+
+                float* output_data = output_tensors[0].GetTensorMutableData<float>();
+                std::vector<float> output_values(output_data, output_data + NUM_CLASSES);
+
+                int prediccion = std::distance(output_values.begin(),
+                                               std::max_element(output_values.begin(), output_values.end()));
+
+                // Cross-entropy: -log de la probabilidad de la clase REAL, no de la predicha
+                int etiqueta_real = static_cast<int>(etiquetas_data[i]);
+                total_loss += -std::log(output_values[etiqueta_real] + 1e-10f);
+
+                if (prediccion == etiqueta_real) aciertos++;
             }
+        };
 
-            std::vector<int64_t> tensor_shape = {1, ALTO, ANCHO};
-            Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
-                memory_info,
-                input_tensor_values.data(),
-                TAMANO_IMAGEN,
-                tensor_shape.data(),
-                tensor_shape.size()
-            );
-
-            std::vector<Ort::Value> output_tensors = session.Run(
-                Ort::RunOptions{nullptr},
-                input_names,
-                &input_tensor,
-                1,
-                output_names,
-                1
-            );
-
-            float* output_data = output_tensors[0].GetTensorMutableData<float>();
-            std::vector<float> output_values(output_data, output_data + NUM_CLASSES);
-
-            int prediccion = std::distance(output_values.begin(),
-                                           std::max_element(output_values.begin(), output_values.end()));
-            float max_prob = *std::max_element(output_values.begin(), output_values.end());
-            total_loss += -std::log(max_prob + 1e-10f);
-
-            int etiqueta_real = static_cast<int>(etiquetas_data[i]);
-            if (prediccion == etiqueta_real) aciertos++;
+        // 1 pasada de calentamiento + 5 medidas; se reporta la mediana
+        const int NUM_CORRIDAS = 5;
+        evaluar_test_set();
+        std::vector<double> tiempos_ms;
+        for (int r = 0; r < NUM_CORRIDAS; r++) {
+            auto inicio = std::chrono::steady_clock::now();
+            evaluar_test_set();
+            auto fin = std::chrono::steady_clock::now();
+            tiempos_ms.push_back(std::chrono::duration<double, std::milli>(fin - inicio).count());
         }
+        std::sort(tiempos_ms.begin(), tiempos_ms.end());
+        double mediana_ms = tiempos_ms[NUM_CORRIDAS / 2];
 
         float accuracy = (static_cast<float>(aciertos) / imagenes_a_probar) * 100.0f;
         float average_loss = total_loss / imagenes_a_probar;
@@ -136,6 +162,8 @@ int main() {
         std::cout << "Epoch: N/A" << std::endl;
         std::cout << "Loss: " << average_loss << std::endl;
         std::cout << "Accuracy of all model: " << accuracy << "%" << std::endl;
+        std::cout << "Inference time (median of " << NUM_CORRIDAS << " runs): " << mediana_ms << " ms total, "
+                  << (mediana_ms * 1000.0 / imagenes_a_probar) << " us/image" << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "Error fatal: " << e.what() << std::endl;
